@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  pgdb:
+    image: postgres:16-alpine
+    container_name: my_postgres_db
+    restart: always
+    environment:
+      POSTGRES_DB: ams_database
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432" # Map host port 5432 to container port 5432
+    volumes:
+      - pg_data:/var/lib/postgresql/data # Mount a named volume for data persistence
+    healthcheck: # Optional: Add a health check to ensure DB is ready
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:8.8 # Using a specific version of pgAdmin 4
+    container_name: my_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com # Your pgAdmin login email
+      PGADMIN_DEFAULT_PASSWORD: pgadmin_password # Your pgAdmin login password
+    ports:
+      - "8080:80" # Map host port 8080 to container port 80 (pgAdmin's default)
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin # Persistent storage for pgAdmin configuration
+    depends_on:
+      pgdb:
+        condition: service_healthy # Ensure pgAdmin starts only after the DB is healthy
+
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: ams_database
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+
+volumes:
+  pg_data:
+  pgadmin_data: # New named volume for pgAdmin persistence
+  mongodb_data:
+  mongodb_config:
