@@ -24,6 +24,7 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     phone = Column(String, unique=True, index=True, nullable= False)
     password = Column(String, nullable=False)
+    profile_picture = Column(String, nullable=True)
     roles = relationship('Role', secondary=user_roles, back_populates='users')
     audit_logs = relationship('AuditLog', back_populates='user')
 

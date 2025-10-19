@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.database.setup_db import Base, engine
 from app.routes import users
@@ -15,6 +16,9 @@ app.add_middleware(
     allow_methods = ['*'],
     allow_headers = ['*']
 )
+
+# Mount static files for profile pictures
+app.mount("/uploads", StaticFiles(directory="./uploads"), name="uploads")
 
 @app.get('/')
 async def welcome():

@@ -72,4 +72,7 @@ class ResetPassword(BaseModel):
     new_password: str
     reset_token: str
 
+class RefreshToken(BaseModel):
+    refresh_token: str
+
 

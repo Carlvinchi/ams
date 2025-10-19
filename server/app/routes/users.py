@@ -1,5 +1,5 @@
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request, UploadFile, File
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import joinedload, defer
 from jose import jwt, JWTError
@@ -7,7 +7,7 @@ from app.database.models import User, Role, ResetPass, AuditLog
 from dotenv import load_dotenv
 import os
 import uuid
-from app.database.schemas import UserCreate, UserResponse, UserLogin, RoleUpdate, UserUpdate, PasswordUpdate, ResetPassword, AdminPassUpdate, AdminUpdateUser
+from app.database.schemas import UserCreate, UserResponse, UserLogin, RoleUpdate, UserUpdate, PasswordUpdate, ResetPassword, AdminPassUpdate, AdminUpdateUser, RefreshToken
 
 from app.utils.dependency import db_dependency, pwd_context, user_dependency, create_log, required_roles, get_ip
 
@@ -22,6 +22,7 @@ router = APIRouter(
     prefix='/users',
     tags=['user']
 )
+
 
 
 #This function creates an existing role or create a new one if does not exist
@@ -45,7 +46,7 @@ async def get_user_by_email(db: db_dependency, email: str):
 #to create jwt access token
 async def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(minutes=20)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=60)
     to_encode.update({"exp": expire, "type": "access"})
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm= ALGORITHM)
@@ -54,7 +55,7 @@ async def create_access_token(data: dict):
 #to create jwt refresh token
 async def create_refresh_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + timedelta(days=7)
+    expire = datetime.now(timezone.utc) + timedelta(days=2)
     to_encode.update({"exp": expire, "type": "refresh"})
 
     return jwt.encode(to_encode, SECRET_KEY, algorithm= ALGORITHM)
@@ -208,8 +209,8 @@ async def login(db: db_dependency, login_req: UserLogin, request: Request):
 
 #Route to recreate new access token with a refresh token
 @router.post('/refresh', response_model=dict)
-async def refresh_token(db: db_dependency, refresh_token: str, request: Request):
-    payload = await verify_token(refresh_token)
+async def refresh_token(db: db_dependency, refresh_req: RefreshToken, request: Request):
+    payload = await verify_token(refresh_req.refresh_token)
 
     if payload is None or payload.get("type") != "refresh":
         raise HTTPException(
@@ -269,6 +270,23 @@ async def admin_get_user(db: db_dependency, user_dep: user_dependency, id: int, 
     user = get_user_info(db, id)
     return user
 
+#route to delete a single user using user_id
+@router.delete('/{id}')
+async def admin_delete_user(db: db_dependency, user_dep: user_dependency, id: int, request: Request, role_check = Depends(required_roles(req_roles=["admin"]))):
+    
+
+    ip = await get_ip(request)
+    await create_log(db, user_dep.get("id"), user_dep.get("role"), "Admin Delete User", f"Admin delete user - {id}", ip)
+
+    user = db.query(User).filter(User.id == id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    db.delete(user)
+    db.commit()
+    return {"detail": f"User {id} deleted successfully"}
+
+
 #route to update user role
 @router.post('/update/role')
 async def update_role(db: db_dependency, user_dep: user_dependency, role_req: RoleUpdate, request: Request, role_check = Depends(required_roles(req_roles=["admin"]))):
@@ -305,6 +323,31 @@ async def update_user(db: db_dependency, user_dep: user_dependency, update_req: 
 
     return {"status": "ok", "data": new_user}
 
+#route for uploading profile picture
+@router.post('/upload/profile-picture')
+async def upload_profile_piture(db: db_dependency, user_dep: user_dependency, request: Request, upload_file: UploadFile = File(...)):
+    user_id = user_dep.get("id")
+    user = db.query(User).filter(User.id == user_id).first()
+
+    file_data = await upload_file.read()
+
+    # Generate unique filename
+    file_extension = upload_file.filename.split(".")[-1]
+    unique_filename = f"{uuid.uuid4()}.{file_extension}"
+
+    file_location = f"./uploads/profile_pictures/{unique_filename}"
+    with open(file_location, "wb") as f:
+        f.write(file_data)
+
+    user.profile_picture = f"/uploads/profile_pictures/{unique_filename}"
+    db.commit()
+
+    ip = await get_ip(request)
+    await create_log(db, user_dep.get("id"), user_dep.get("role"), "Upload Profile Picture", "User uploaded profile picture", ip)
+
+    new_user = get_user_info(db, user_id)
+
+    return {"status": "ok", "data": new_user}
 
 #route for updating user password
 @router.post('/update/password')
